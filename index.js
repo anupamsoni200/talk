@@ -1,35 +1,55 @@
 const port = process.env.PORT || 3000;
 const io = require("socket.io")(port, {
-    cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
-    }
+    cors: { origin: "*" }
 });
 
-let queue = {
-    "18-25": [],
-    "26-35": [],
-    "36+": []
-};
+// We use a single array to store waiting users
+let waitingUsers = [];
 
 io.on("connection", (socket) => {
     console.log("User connected: " + socket.id);
 
-    socket.on("join_queue", (ageGroup) => {
-        if (!queue[ageGroup]) ageGroup = "18-25"; // Default safety
+    socket.on("join_queue", (data) => {
+        // data contains: { ageGroup, gender, preference }
+        const user = {
+            id: socket.id,
+            ageGroup: data.ageGroup,
+            gender: data.gender,         // 'Male' or 'Female'
+            preference: data.preference, // 'Male', 'Female', or 'Anyone'
+            socket: socket
+        };
 
-        console.log(`User ${socket.id} joined ${ageGroup} queue`);
+        console.log(`User joined: ${user.gender} looking for ${user.preference} in ${user.ageGroup}`);
 
-        if (queue[ageGroup].length > 0) {
-            const peerId = queue[ageGroup].shift();
-            console.log(`Matching ${socket.id} with ${peerId}`);
+        // TRY TO FIND A MATCH
+        const matchIndex = waitingUsers.findIndex((peer) => {
+            // 1. Must be in same age group
+            if (peer.ageGroup !== user.ageGroup) return false;
+
+            // 2. Check User's Preference (What I want)
+            // If I want 'Anyone', I don't care what peer is. 
+            // If I want Specific, peer.gender must match.
+            const userIsHappy = (user.preference === "Anyone") || (user.preference === peer.gender);
+
+            // 3. Check Peer's Preference (What they want)
+            const peerIsHappy = (peer.preference === "Anyone") || (peer.preference === user.gender);
+
+            return userIsHappy && peerIsHappy;
+        });
+
+        if (matchIndex > -1) {
+            // MATCH FOUND!
+            const peer = waitingUsers.splice(matchIndex, 1)[0]; // Remove peer from queue
             
-            // Notify both to start calling
-            socket.emit("match_found", { peerId: peerId, initiator: true });
-            io.to(peerId).emit("match_found", { peerId: socket.id, initiator: false });
+            console.log(`Matched ${user.id} with ${peer.id}`);
+
+            // Notify both
+            socket.emit("match_found", { peerId: peer.id, initiator: true });
+            peer.socket.emit("match_found", { peerId: user.id, initiator: false });
+
         } else {
-            queue[ageGroup].push(socket.id);
-            socket.ageGroup = ageGroup;
+            // NO MATCH, ADD TO QUEUE
+            waitingUsers.push(user);
         }
     });
 
@@ -42,12 +62,23 @@ io.on("connection", (socket) => {
         });
     });
 
+    socket.on("leave_room", () => {
+        // Used when user clicks "Next"
+        handleDisconnect(socket);
+    });
+
     socket.on("disconnect", () => {
-        console.log("User disconnected: " + socket.id);
-        if (socket.ageGroup && queue[socket.ageGroup]) {
-            queue[socket.ageGroup] = queue[socket.ageGroup].filter(id => id !== socket.id);
-        }
+        handleDisconnect(socket);
     });
 });
+
+function handleDisconnect(socket) {
+    // Remove user from queue if they are waiting
+    const index = waitingUsers.findIndex(u => u.id === socket.id);
+    if (index !== -1) {
+        waitingUsers.splice(index, 1);
+        console.log("Removed waiting user: " + socket.id);
+    }
+}
 
 console.log(`Server running on port ${port}`);
