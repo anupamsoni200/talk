@@ -10,10 +10,20 @@ module.exports = {
             const user1Id = queue.shift();
             const user2Id = queue.shift();
 
-            // Notify both users with roles
-            // user1 will be the initiator
-            io.to(user1Id).emit('match_found', { target: user2Id, isInitiator: true });
-            io.to(user2Id).emit('match_found', { target: user1Id, isInitiator: false });
+            const user1 = require('./activeUsers').getUser(user1Id);
+            const user2 = require('./activeUsers').getUser(user2Id);
+
+            // Notify both users with roles and names
+            io.to(user1Id).emit('match_found', { 
+                target: user2Id, 
+                targetUsername: user2 ? user2.username : 'Stranger',
+                isInitiator: true 
+            });
+            io.to(user2Id).emit('match_found', { 
+                target: user1Id, 
+                targetUsername: user1 ? user1.username : 'Stranger',
+                isInitiator: false 
+            });
         }
     },
 

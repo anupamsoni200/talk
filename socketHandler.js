@@ -37,6 +37,11 @@ module.exports = (io, socket) => {
         io.to(target).emit('receive_message', { from: socket.id, message, timestamp: Date.now() });
     });
 
+    socket.on('call_ready', (data) => {
+        console.log('Call ready from:', socket.id, 'to:', data.target);
+        io.to(data.target).emit('peer_ready', { from: socket.id });
+    });
+
     socket.on('disconnect', () => {
         activeUsers.removeUser(socket.id);
         matchMaker.removeFromQueue(socket.id);
