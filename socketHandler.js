@@ -5,6 +5,7 @@ module.exports = (io, socket) => {
     socket.on('join_chat', (profile) => {
         console.log('User joined with profile:', profile.username);
         activeUsers.addUser(socket.id, { ...profile, socketId: socket.id });
+        io.emit('online_users_count', activeUsers.getAllUsers().length);
         io.emit('active_users_updated', activeUsers.getAllUsers());
     });
 
@@ -12,9 +13,10 @@ module.exports = (io, socket) => {
         socket.emit('active_users_list', activeUsers.getAllUsers());
     });
 
-    socket.on('start_match', () => {
-        console.log('User joined queue:', socket.id);
-        matchMaker.addToQueue(socket, io);
+    socket.on('start_match', (data) => {
+        const mode = (data && data.mode) || 'video';
+        console.log(`User ${socket.id} joined ${mode} queue.`);
+        matchMaker.addToQueue(socket, io, mode);
     });
 
     socket.on('offer', (data) => {
@@ -32,6 +34,16 @@ module.exports = (io, socket) => {
         io.to(target).emit('ice_candidate', { from: socket.id, candidate });
     });
 
+    socket.on('typing', (data) => {
+        const { target } = data;
+        io.to(target).emit('typing', { from: socket.id });
+    });
+
+    socket.on('stop_typing', (data) => {
+        const { target } = data;
+        io.to(target).emit('stop_typing', { from: socket.id });
+    });
+
     socket.on('send_message', (data) => {
         const { target, message } = data;
         io.to(target).emit('receive_message', { from: socket.id, message, timestamp: Date.now() });
@@ -45,6 +57,7 @@ module.exports = (io, socket) => {
     socket.on('disconnect', () => {
         activeUsers.removeUser(socket.id);
         matchMaker.removeFromQueue(socket.id);
+        io.emit('online_users_count', activeUsers.getAllUsers().length);
         io.emit('active_users_updated', activeUsers.getAllUsers());
         console.log('User disconnected:', socket.id);
     });
